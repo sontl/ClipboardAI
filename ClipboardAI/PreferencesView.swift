@@ -20,54 +20,70 @@ struct PreferencesView: View {
     ]
 
     var body: some View {
+        let labelWidth: CGFloat = 120
         VStack(alignment: .leading, spacing: 16) {
-            Text("Preferences")
-                .font(.title2)
-                .bold()
-
-            GroupBox(label: Text("Rephrase Style")) {
-                HStack {
-                    Text("Tone")
-                    Spacer()
-                    Picker("Tone", selection: $tone) {
-                        ForEach(tones, id: \.self) { t in
-                            Text(t).tag(t)
-                        }
+            // Rephrase section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Rephrase")
+                    .font(.headline)
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    GridRow(alignment: .firstTextBaseline) {
+                        Text("Tone")
+                            .frame(width: labelWidth, alignment: .trailing)
+                            .foregroundStyle(.secondary)
+                        Picker(selection: $tone) {
+                            ForEach(tones, id: \.self) { t in
+                                Text(t).tag(t)
+                            }
+                        } label: { EmptyView() }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 220, maxWidth: 260, alignment: .leading)
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 180)
+                    GridRow {
+                        Color.clear.frame(width: labelWidth)
+                        Text("Controls the writing tone used when rephrasing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .padding(.vertical, 4)
-                Text("Controls the writing tone used when rephrasing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
-            GroupBox(label: Text("Shortcuts")) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+            Divider().padding(.horizontal, -8)
+
+            // Shortcuts section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Shortcuts")
+                    .font(.headline)
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    GridRow(alignment: .firstTextBaseline) {
                         Text("Copy & Rephrase")
-                        Spacer()
+                            .frame(width: labelWidth, alignment: .trailing)
+                            .foregroundStyle(.secondary)
                         Text("⇧⌘C")
                             .monospaced()
-                            .padding(4)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.gray.opacity(0.15)))
+                            .padding(.vertical, 3)
+                            .padding(.horizontal, 8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.15)))
                     }
-                    Text("Use the menu bar icon → Preferences… to view settings. Shortcut is currently fixed.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    GridRow {
+                        Color.clear.frame(width: labelWidth)
+                        Text("Open via the menu bar icon → Preferences…. The shortcut is currently fixed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             HStack {
                 Spacer()
                 Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
             }
         }
-        .padding(20)
-        .frame(minWidth: 420, minHeight: 260)
+        .padding(.all, 14)
+        .frame(minWidth: 480, minHeight: 270)
     }
 }
 
