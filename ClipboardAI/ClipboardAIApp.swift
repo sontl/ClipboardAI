@@ -2,23 +2,26 @@ import SwiftUI
 import Cocoa
 import Carbon
 import Foundation
+import UserNotifications
 import GoogleGenerativeAI
+
 @main
 struct ClipboardAIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
         Settings {
-            EmptyView()
+            PreferencesView()
         }
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     static var shared: AppDelegate!
     var statusItem: NSStatusItem!
     var hotKeyRef: EventHotKeyRef?
     var apiClient = APIClient()
+    var prefsWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -32,13 +35,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // hello world 
         setupMenu()
+        // Request notification authorization and set delegate
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("Notification authorization error: \(error)")
+            }
+            print("Notifications granted: \(granted)")
+        }
         registerHotKey()
     }
     
     func setupMenu() {
         let menu = NSMenu()
         
-        menu.addItem(NSMenuItem(title: "Copy & Rephrase (⇧⌘C)", action: nil, keyEquivalent: ""))
+        let rephraseItem = NSMenuItem(title: "Copy & Rephrase (⇧⌘C)", action: #selector(rephraseNow(_:)), keyEquivalent: "")
+        rephraseItem.target = self
+        menu.addItem(rephraseItem)
+
+        let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(openPreferences(_:)), keyEquivalent: ",")
+        prefsItem.target = self
+        menu.addItem(prefsItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         
@@ -137,54 +156,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func showNotification(title: String, message: String) {
-        let notification = NSUserNotification()
-        notification.title = title
-        notification.informativeText = message
-        notification.soundName = NSUserNotificationDefaultSoundName
-        NSUserNotificationCenter.default.deliver(notification)
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = message
+        content.sound = UNNotificationSound.default
+
+        // Deliver immediately
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to deliver notification: \(error)")
+            }
+        }
+    }
+
+    // Ensure notifications show while app is in the foreground
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
+    }
+
+    // MARK: - Menu Actions
+    @objc func rephraseNow(_ sender: Any?) {
+        handleHotKeyEvent()
+    }
+
+    @objc func openPreferences(_ sender: Any?) {
+        if prefsWindow == nil {
+            let hosting = NSHostingView(rootView: PreferencesView())
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
+                                  styleMask: [.titled, .closable, .miniaturizable],
+                                  backing: .buffered, defer: false)
+            window.center()
+            window.title = "Preferences"
+            window.contentView = hosting
+            prefsWindow = window
+        }
+        prefsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
 // API Client to handle the rephrasing service
 class APIClient {
-    private let model: GenerativeModel
-    
-    init() {
-        let config = GenerationConfig(
-            temperature: 1,
-            topP: 0.95,
-            topK: 40,
-            maxOutputTokens: 8192,
-            responseMIMEType: "application/json"
-        )
-        
-        guard let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"] else {
-            fatalError("Add GEMINI_API_KEY as an Environment Variable in your app's scheme.")
+    private let config = GenerationConfig(
+        temperature: 1,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 8192,
+        responseMIMEType: "application/json"
+    )
+
+    func rephraseText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        // Fetch API key per call to avoid hard-crashing at init
+        guard let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !apiKey.isEmpty else {
+            let err = NSError(domain: "APIClientError", code: 100, userInfo: [NSLocalizedDescriptionKey: "Missing GEMINI_API_KEY. Set it in Scheme > Run > Environment Variables."])
+            AppDelegate.shared?.showNotification(title: "Missing API Key", message: "Set GEMINI_API_KEY in the Run scheme.")
+            completion(.failure(err))
+            return
         }
-        
-        model = GenerativeModel(
+
+        let model = GenerativeModel(
             name: "gemini-2.0-flash-exp",
             apiKey: apiKey,
             generationConfig: config
         )
-    }
-    
-    func rephraseText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+
         Task {
             do {
-                // Create a new chat instance for each request
                 let chat = model.startChat(history: [])
-                
-                 let message = "Please rephrase the following text in a professional manner, Just return the rephrased text, no other text or comment, Only return one option, no other options. Don't return array. Here is the text need to rephrase: \(text)" 
+                // Read user-selected tone (default: Professional)
+                let tone = UserDefaults.standard.string(forKey: "rephrase_tone") ?? "Professional"
+                let message = "You are a writing assistant. Rephrase the text in a \(tone.lowercased()) tone. Return only the rephrased text with no extra commentary or formatting. Here is the text: \(text)"
                 let response = try await chat.sendMessage(message)
-                
-                if let responseText = response.text?.trimmingCharacters(in: .whitespacesAndNewlines) {
+
+                if let responseText = response.text?.trimmingCharacters(in: .whitespacesAndNewlines), !responseText.isEmpty {
                     print("Raw response: \(responseText)")
                     DispatchQueue.main.async {
                         completion(.success(responseText))
                     }
                 } else {
-                    print("No response text received") 
+                    print("No response text received")
                     DispatchQueue.main.async {
                         completion(.failure(NSError(domain: "APIClientError", code: 1, userInfo: [NSLocalizedDescriptionKey: "No response received"])))
                     }
