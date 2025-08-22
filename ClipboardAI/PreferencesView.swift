@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct PreferencesView: View {
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("rephrase_tone") private var tone: String = "Professional"
 
     private let tones: [String] = [
@@ -62,9 +63,7 @@ struct PreferencesView: View {
 
             HStack {
                 Spacer()
-                Button("Close") {
-                    NSApp.keyWindow?.close()
-                }
+                Button("Close") { dismiss() }
             }
         }
         .padding(20)

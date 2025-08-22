@@ -16,12 +16,13 @@ struct ClipboardAIApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate {
     static var shared: AppDelegate!
     var statusItem: NSStatusItem!
     var hotKeyRef: EventHotKeyRef?
     var apiClient = APIClient()
     var prefsWindow: NSWindow?
+    var prefsWindowController: NSWindowController?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -182,17 +183,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc func openPreferences(_ sender: Any?) {
         if prefsWindow == nil {
-            let hosting = NSHostingView(rootView: PreferencesView())
+            let hostingController = NSHostingController(rootView: PreferencesView())
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
                                   styleMask: [.titled, .closable, .miniaturizable],
                                   backing: .buffered, defer: false)
             window.center()
             window.title = "Preferences"
-            window.contentView = hosting
+            window.contentViewController = hostingController
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            let controller = NSWindowController(window: window)
             prefsWindow = window
+            prefsWindowController = controller
         }
+        prefsWindowController?.showWindow(nil)
         prefsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // NSWindowDelegate
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, window == prefsWindow {
+            // Keep window around if needed, or nil out to recreate fresh next time
+            prefsWindow = nil
+            prefsWindowController = nil
+        }
     }
 }
 
